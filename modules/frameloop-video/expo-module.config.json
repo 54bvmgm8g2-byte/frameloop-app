@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["FrameLoopVideoModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.frameloopvideo.FrameLoopVideoModule"]
+  }
+}

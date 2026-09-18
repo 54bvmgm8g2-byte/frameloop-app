@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "FrameLoop",
+    "slug": "frameloop",
+    "scheme": "frameloop",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#F6F7F9",
+    "plugins": [
+      ["expo-camera", { "cameraPermission": "FrameLoop에서 같은 구도의 변화 사진을 촬영하려면 카메라 접근이 필요합니다.", "recordAudioAndroid": false, "barcodeScannerEnabled": false }],
+      ["expo-image-picker", { "photosPermission": "FrameLoop 프로젝트에 기존 사진을 추가하려면 사진 접근이 필요합니다.", "microphonePermission": false }],
+      ["expo-media-library", { "photosPermission": "FrameLoop에서 선택한 사진을 확인하기 위해 접근이 필요합니다.", "savePhotosPermission": "FrameLoop 변화 영상을 사진 앱에 저장하기 위해 권한이 필요합니다.", "granularPermissions": ["video"] }]
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.frameloop.app",
+      "buildNumber": "1"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.frameloop.app",
+      "versionCode": 1
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

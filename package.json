@@ -1,0 +1,29 @@
+{
+  "name": "frameloop",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "expo": "~57.0.23",
+    "expo-camera": "~57.0.5",
+    "expo-file-system": "~57.0.7",
+    "expo-image-picker": "~57.0.18",
+    "expo-linear-gradient": "~57.0.2",
+    "expo-media-library": "~57.0.5",
+    "expo-sharing": "~57.0.20",
+    "expo-status-bar": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.2",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web"
+  },
+  "private": true
+}
