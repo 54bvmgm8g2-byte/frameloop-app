@@ -7,6 +7,7 @@ export type TimelapseOptions = {
   transition: 'cut' | 'smooth';
   frameDurationMs: number;
   aspectRatio: '9:16' | '4:5' | '1:1';
+  quality?: '1080p' | '4k';
 };
 
 export async function createTimelapse(
@@ -23,11 +24,12 @@ export async function createTimelapse(
   });
   try {
     onProgress?.(0);
+    const shortEdge = options.quality === '4k' ? 2160 : 1080;
     const outputSize = options.aspectRatio === '9:16'
-      ? { width: 1080, height: 1920 }
+      ? { width: shortEdge, height: shortEdge / 9 * 16 }
       : options.aspectRatio === '4:5'
-        ? { width: 1080, height: 1350 }
-        : { width: 1080, height: 1080 };
+        ? { width: shortEdge, height: shortEdge / 4 * 5 }
+        : { width: shortEdge, height: shortEdge };
     const result = await FrameLoopVideoModule.createTimelapseAsync({
       photoUris: project.photos.map(photo => photo.uri),
       transition: options.transition,

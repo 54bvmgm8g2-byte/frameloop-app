@@ -53,8 +53,8 @@ class FrameLoopVideoModule : Module() {
     }
     val context = appContext.reactContext
       ?: throw FrameLoopVideoException("ERR_NO_CONTEXT", "앱 저장공간을 열지 못했어요.")
-    val width = min(1080, max(360, options.outputWidth))
-    val height = min(1920, max(640, options.outputHeight))
+    val width = min(2160, max(360, options.outputWidth))
+    val height = min(3840, max(640, options.outputHeight))
     if (width % 2 != 0 || height % 2 != 0) {
       throw FrameLoopVideoException("ERR_INVALID_SIZE", "지원하지 않는 영상 크기예요.")
     }
@@ -69,7 +69,7 @@ class FrameLoopVideoModule : Module() {
 
     val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
       setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible)
-      setInteger(MediaFormat.KEY_BIT_RATE, 8_000_000)
+      setInteger(MediaFormat.KEY_BIT_RATE, if (width > 1080 || height > 1920) 24_000_000 else 8_000_000)
       setInteger(MediaFormat.KEY_FRAME_RATE, fps)
       setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
     }

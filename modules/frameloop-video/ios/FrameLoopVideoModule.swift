@@ -51,8 +51,8 @@ public class FrameLoopVideoModule: Module {
 
   private func createTimelapse(_ options: TimelapseOptions) async throws -> [String: Any] {
     guard (2...60).contains(options.photoUris.count) else { throw FrameLoopVideoError.invalidPhotos }
-    let width = min(1080, max(360, options.outputWidth))
-    let height = min(1920, max(640, options.outputHeight))
+    let width = min(2160, max(360, options.outputWidth))
+    let height = min(3840, max(640, options.outputHeight))
     guard width.isMultiple(of: 2), height.isMultiple(of: 2) else { throw FrameLoopVideoError.invalidSize }
 
     let fps: Int32 = 30
@@ -67,12 +67,13 @@ public class FrameLoopVideoModule: Module {
     try? FileManager.default.removeItem(at: outputURL)
 
     let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+    let bitRate = width > 1080 || height > 1920 ? 24_000_000 : 8_000_000
     let settings: [String: Any] = [
       AVVideoCodecKey: AVVideoCodecType.h264,
       AVVideoWidthKey: width,
       AVVideoHeightKey: height,
       AVVideoCompressionPropertiesKey: [
-        AVVideoAverageBitRateKey: 8_000_000,
+        AVVideoAverageBitRateKey: bitRate,
         AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
         AVVideoMaxKeyFrameIntervalKey: Int(fps)
       ]
