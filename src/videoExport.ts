@@ -23,12 +23,17 @@ export async function createTimelapse(
   });
   try {
     onProgress?.(0);
+    const outputSize = options.aspectRatio === '9:16'
+      ? { width: 1080, height: 1920 }
+      : options.aspectRatio === '4:5'
+        ? { width: 1080, height: 1350 }
+        : { width: 1080, height: 1080 };
     const result = await FrameLoopVideoModule.createTimelapseAsync({
       photoUris: project.photos.map(photo => photo.uri),
       transition: options.transition,
       frameDurationMs: options.frameDurationMs,
-      outputWidth: 1080,
-      outputHeight: 1920,
+      outputWidth: outputSize.width,
+      outputHeight: outputSize.height,
       maxDurationSeconds: 15,
     });
     onProgress?.(1);
