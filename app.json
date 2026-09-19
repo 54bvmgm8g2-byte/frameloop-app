@@ -15,9 +15,9 @@
       ["react-native-google-mobile-ads", { "iosAppId": "ca-app-pub-6635734723067997~2955017073" }]
     ],
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.frameloop.app",
-      "buildNumber": "4"
+      "buildNumber": "5"
     },
     "android": {
       "adaptiveIcon": {
