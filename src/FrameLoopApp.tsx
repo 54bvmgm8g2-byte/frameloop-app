@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as Sharing from 'expo-sharing';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Animated, Image, KeyboardAvoidingView, Platform, Pressable,
@@ -46,7 +47,7 @@ function openHomeMenu(projects: Project[], onImported: (projects: Project[]) => 
   Alert.alert('FrameLoop 안내', '확인할 항목을 선택하세요.', [
     { text: '기기 저장 안내', onPress: () => Alert.alert('기기 저장 안내', '사진과 프로젝트는 서버로 전송되지 않고 이 휴대폰에만 저장돼요. 앱을 삭제하면 기록을 복구할 수 없으니 완성 영상은 사진 앱에 저장해주세요.') },
     { text: '광고 개인정보 설정', onPress: () => void openAdPrivacyOptions() },
-    { text: '기록 백업하기', onPress: () => void exportBackup(projects).then(uri => shareVideo(uri)).then(() => Alert.alert('백업 완료', '파일 앱이나 AirDrop으로 새 기기에 보내세요.')).catch(() => Alert.alert('백업 실패', '잠시 후 다시 시도해주세요.')) },
+    { text: '기록 백업하기', onPress: () => void exportBackup(projects).then(uri => Sharing.shareAsync(uri, { mimeType: 'application/zip', UTI: 'public.zip-archive', dialogTitle: 'FrameLoop 백업 공유' })).then(() => Alert.alert('백업 완료', '파일 앱이나 AirDrop으로 새 기기에 보내세요.')).catch(() => Alert.alert('백업 실패', '잠시 후 다시 시도해주세요.')) },
     { text: '백업 복원하기', onPress: () => void importBackup().then(restored => { if (restored) { onImported(restored); Alert.alert('복원 완료', `${restored.length}개 프로젝트를 복원했어요.`); } }).catch(e => Alert.alert('복원 실패', e instanceof Error ? e.message : '백업 파일을 확인해주세요.')) },
     { text: '닫기', style: 'cancel' },
   ]);
