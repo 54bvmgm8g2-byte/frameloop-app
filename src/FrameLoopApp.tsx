@@ -4,14 +4,14 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Animated, Image, KeyboardAvoidingView, Platform, Pressable,
-  SafeAreaView, ScrollView, StatusBar as RNStatusBar, StyleSheet, Text,
+  Linking, SafeAreaView, ScrollView, StatusBar as RNStatusBar, StyleSheet, Text,
   TextInput, View,
 } from 'react-native';
-import { loadProjects, persistImage, saveProjects } from './storage';
+import { exportBackup, importBackup, loadProjects, persistImage, saveProjects } from './storage';
 import { c } from './theme';
 import { Category, ProgressPhoto, Project, Screen } from './types';
 import { createTimelapse, saveVideoToLibrary, shareVideo } from './videoExport';
-import { watchRewardedAdFor4K } from './rewardedAds';
+import { prepareAdConsent, showAdPrivacyOptions, watchRewardedAdFor4K } from './rewardedAds';
 
 const cats: { key: Category; label: string; icon: string }[] = [
   { key: 'people', label: '사람', icon: '◉' }, { key: 'spaces', label: '공간', icon: '⌂' },
@@ -37,6 +37,20 @@ function Header({ title, back, more }: { title: string; back?: () => void; more?
 function EmptyArt() {
   return <View style={s.art}><View style={s.artBack}/><View style={s.artFront}><View style={s.sun}/><View style={s.hill}/></View></View>;
 }
+async function openAdPrivacyOptions() {
+  const result = await showAdPrivacyOptions();
+  if (result === 'not-required') Alert.alert('광고 개인정보 설정', '현재 지역에서는 별도의 광고 개인정보 설정이 필요하지 않아요.');
+  else if (result === 'unavailable') Alert.alert('설정을 열지 못했어요', '인터넷 연결을 확인한 뒤 다시 시도해주세요.');
+}
+function openHomeMenu(projects: Project[], onImported: (projects: Project[]) => void) {
+  Alert.alert('FrameLoop 안내', '확인할 항목을 선택하세요.', [
+    { text: '기기 저장 안내', onPress: () => Alert.alert('기기 저장 안내', '사진과 프로젝트는 서버로 전송되지 않고 이 휴대폰에만 저장돼요. 앱을 삭제하면 기록을 복구할 수 없으니 완성 영상은 사진 앱에 저장해주세요.') },
+    { text: '광고 개인정보 설정', onPress: () => void openAdPrivacyOptions() },
+    { text: '기록 백업하기', onPress: () => void exportBackup(projects).then(uri => shareVideo(uri)).then(() => Alert.alert('백업 완료', '파일 앱이나 AirDrop으로 새 기기에 보내세요.')).catch(() => Alert.alert('백업 실패', '잠시 후 다시 시도해주세요.')) },
+    { text: '백업 복원하기', onPress: () => void importBackup().then(restored => { if (restored) { onImported(restored); Alert.alert('복원 완료', `${restored.length}개 프로젝트를 복원했어요.`); } }).catch(e => Alert.alert('복원 실패', e instanceof Error ? e.message : '백업 파일을 확인해주세요.')) },
+    { text: '닫기', style: 'cancel' },
+  ]);
+}
 function BottomNav({ active, go }: { active: 'home' | 'library'; go: (x: Screen) => void }) {
   const data = [
     { key: 'home', label: '홈', icon: '⌂', action: () => go({ name: 'home' }) },
@@ -48,11 +62,11 @@ function BottomNav({ active, go }: { active: 'home' | 'library'; go: (x: Screen)
   </Pressable>)}</View>;
 }
 
-function Home({ projects, go }: { projects: Project[]; go: (x: Screen) => void }) {
+function Home({ projects, go, onImported }: { projects: Project[]; go: (x: Screen) => void; onImported: (projects: Project[]) => void }) {
   const [filter, setFilter] = useState<Category | 'all'>('all');
   const shown = filter === 'all' ? projects : projects.filter(x => x.category === filter);
   return <SafeAreaView style={s.safe}><ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
-    <View style={s.homeTop}><Text style={s.brand}>FrameLoop</Text><Pressable onPress={() => Alert.alert('기기 저장 안내','사진과 프로젝트는 서버로 전송되지 않고 이 휴대폰에만 저장돼요. 앱을 삭제하면 기록을 복구할 수 없으니 완성 영상은 사진 앱에 저장해주세요.')} style={s.topIcon}><Text style={s.topIconText}>•••</Text></Pressable></View>
+    <View style={s.homeTop}><Text style={s.brand}>FrameLoop</Text><Pressable onPress={() => openHomeMenu(projects, onImported)} style={s.topIcon}><Text style={s.topIconText}>•••</Text></Pressable></View>
     <View style={s.hero}><View><Text style={s.title}>나의 변화</Text><Text style={s.homeSub}>오늘의 작은 변화를 같은 구도로 남겨보세요.</Text></View></View>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>
       {[{ key: 'all', label: '전체' }, ...cats.slice(0, 4)].map(x => <Pressable key={x.key} onPress={() => setFilter(x.key as any)} style={[s.chip, filter === x.key && s.chipOn]}><Text style={[s.chipText, filter === x.key && s.chipTextOn]}>{x.label}</Text></Pressable>)}
@@ -93,7 +107,7 @@ function Stat({ value, label }: { value: string; label: string }) { return <View
 function QuickAction({icon,label,onPress,primary,disabled}:{icon:string;label:string;onPress:()=>void;primary?:boolean;disabled?:boolean}) { return <Pressable disabled={disabled} onPress={onPress} style={({pressed})=>[s.quickAction,primary&&s.quickActionPrimary,disabled&&{opacity:.35},pressed&&s.pressed]}><Text style={[s.quickIcon,primary&&{color:'#fff'}]}>{icon}</Text><Text style={[s.quickLabel,primary&&{color:'#fff'}]}>{label}</Text></Pressable>; }
 
 function Camera({ project, back, add }: { project: Project; back: () => void; add: (x: ProgressPhoto) => void }) {
-  const ref = useRef<CameraView>(null); const [permission, ask] = useCameraPermissions(); const [facing, setFacing] = useState<CameraType>('back'); const [opacity, setOpacity] = useState(.45); const [busy, setBusy] = useState(false); const [countdown, setCountdown] = useState<number | null>(null); const previous = project.photos.at(-1);
+  const ref = useRef<CameraView>(null); const [permission, ask] = useCameraPermissions(); const requestedPermission = useRef(false); const [facing, setFacing] = useState<CameraType>('back'); const [opacity, setOpacity] = useState(.45); const [busy, setBusy] = useState(false); const [countdown, setCountdown] = useState<number | null>(null); const previous = project.photos.at(-1);
   const save = async (uri: string) => { setBusy(true); try { add({ id: String(Date.now()), uri: await persistImage(uri), createdAt: new Date().toISOString() }); } catch { Alert.alert('저장하지 못했어요', '잠시 후 다시 시도해주세요.'); } finally { setBusy(false); } };
   const capture = async () => { if (!ref.current || busy) return; const result = await ref.current.takePictureAsync({ quality: .9 }); if (result?.uri) await save(result.uri); };
   const pick = async () => { const x = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: .9 }); if (!x.canceled && x.assets[0]) await save(x.assets[0].uri); };
@@ -103,9 +117,15 @@ function Camera({ project, back, add }: { project: Project; back: () => void; ad
     const timer = setTimeout(() => setCountdown(value => value === null ? null : value - 1), 1000);
     return () => clearTimeout(timer);
   }, [countdown]);
+  useEffect(() => {
+    if (!permission || permission.granted || !permission.canAskAgain || requestedPermission.current) return;
+    requestedPermission.current = true;
+    void ask();
+  }, [permission, ask]);
   const startTimer = () => { if (!busy && countdown === null) setCountdown(3); };
   if (!permission) return <View style={[s.safe, s.center]}><ActivityIndicator color={c.blue}/></View>;
-  if (!permission.granted) return <SafeAreaView style={s.permission}><Text style={s.permissionIcon}>◎</Text><Text style={s.permissionTitle}>카메라 접근이 필요해요</Text><Text style={s.permissionCopy}>이전 사진과 같은 구도로 새로운 변화를 촬영하기 위해 사용해요.</Text><Button label="카메라 허용하기" onPress={ask}/><Pressable onPress={pick}><Text style={s.importLink}>사진첩에서 가져오기</Text></Pressable><Pressable onPress={back}><Text style={s.cancel}>돌아가기</Text></Pressable></SafeAreaView>;
+  if (!permission.granted && permission.canAskAgain) return <View style={[s.safe, s.center]}><ActivityIndicator color={c.blue}/></View>;
+  if (!permission.granted) return <SafeAreaView style={s.permission}><Text style={s.permissionIcon}>◎</Text><Text style={s.permissionTitle}>카메라 접근이 꺼져 있어요</Text><Text style={s.permissionCopy}>설정에서 카메라 접근을 허용하면 같은 구도로 변화 사진을 촬영할 수 있어요.</Text><Button label="설정 열기" onPress={() => void Linking.openSettings()}/><Pressable onPress={pick}><Text style={s.importLink}>사진첩에서 가져오기</Text></Pressable><Pressable onPress={back}><Text style={s.cancel}>돌아가기</Text></Pressable></SafeAreaView>;
   return <View style={s.cameraPage}><StatusBar style="light"/><CameraView ref={ref} style={s.cameraPreview} facing={facing} active/>
     <View pointerEvents="box-none" style={s.cameraOverlay}>
       {previous && <Image source={{ uri: previous.uri }} style={[StyleSheet.absoluteFill, { opacity }]} resizeMode="cover"/>}<Grid/>
@@ -175,19 +195,20 @@ function Library({projects,go}:{projects:Project[];go:(x:Screen)=>void}) {
 export default function FrameLoopApp() {
   const [projects,setProjects]=useState<Project[]>([]); const [screen,setScreen]=useState<Screen>({name:'home'}); const [loading,setLoading]=useState(true);
   useEffect(()=>{loadProjects().then(setProjects).finally(()=>setLoading(false));},[]);
+  useEffect(()=>{void prepareAdConsent();},[]);
   useEffect(()=>{if(!loading) saveProjects(projects);},[projects,loading]);
   const project=useMemo(()=>'projectId' in screen?projects.find(x=>x.id===screen.projectId):undefined,[projects,screen]);
   const add=(id:string,photo:ProgressPhoto)=>{setProjects(xs=>xs.map(x=>x.id===id?{...x,photos:[...x.photos,photo]}:x));setScreen({name:'project',projectId:id});};
   if(loading)return <View style={[s.safe,s.center]}><ActivityIndicator size="large" color={c.blue}/></View>;
   let body:React.ReactNode;
-  if(screen.name==='home')body=<Home projects={projects} go={setScreen}/>;
+  if(screen.name==='home')body=<Home projects={projects} go={setScreen} onImported={setProjects}/>;
   else if(screen.name==='create')body=<Create back={()=>setScreen({name:'home'})} create={p=>{setProjects(x=>[p,...x]);setScreen({name:'camera',projectId:p.id});}}/>;
   else if(screen.name==='library')body=<Library projects={projects} go={setScreen}/>;
   else if(screen.name==='project'&&project)body=<ProjectView project={project} go={setScreen} remove={()=>{setProjects(x=>x.filter(y=>y.id!==project.id));setScreen({name:'home'});}}/>;
   else if(screen.name==='camera'&&project)body=<Camera project={project} back={()=>setScreen({name:'project',projectId:project.id})} add={p=>add(project.id,p)}/>;
   else if(screen.name==='compare'&&project&&project.photos.length>1)body=<Compare project={project} back={()=>setScreen({name:'project',projectId:project.id})}/>;
   else if(screen.name==='playback'&&project&&project.photos.length>1)body=<Playback project={project} back={()=>setScreen({name:'project',projectId:project.id})}/>;
-  else body=<Home projects={projects} go={setScreen}/>;
+  else body=<Home projects={projects} go={setScreen} onImported={setProjects}/>;
   return <View style={{flex:1,backgroundColor:c.bg}}><StatusBar style="dark"/>{body}</View>;
 }
 
