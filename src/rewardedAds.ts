@@ -83,7 +83,10 @@ async function initializeAds() {
 
 export type Rewarded4KResult = 'earned' | 'closed' | 'unavailable';
 
-export async function watchRewardedAdFor4K(): Promise<Rewarded4KResult> {
+export type RewardedAdPhase = 'loading' | 'showing' | 'rewarded' | 'closed';
+
+export async function watchRewardedAdFor4K(onPhase?: (phase: RewardedAdPhase) => void): Promise<Rewarded4KResult> {
+  onPhase?.('loading');
   if (!(await initializeAds())) return 'unavailable';
 
   return new Promise(resolve => {
@@ -107,6 +110,7 @@ export async function watchRewardedAdFor4K(): Promise<Rewarded4KResult> {
 
     subscriptions.push(
       ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
+        onPhase?.('showing');
         if (loadTimeout) {
           clearTimeout(loadTimeout);
           loadTimeout = null;
@@ -115,8 +119,10 @@ export async function watchRewardedAdFor4K(): Promise<Rewarded4KResult> {
       }),
       ad.addAdEventListener(RewardedAdEventType.EARNED_REWARD, () => {
         earned = true;
+        onPhase?.('rewarded');
       }),
       ad.addAdEventListener(AdEventType.CLOSED, () => {
+        onPhase?.('closed');
         finish(earned ? 'earned' : 'closed');
       }),
       ad.addAdEventListener(AdEventType.ERROR, () => {
