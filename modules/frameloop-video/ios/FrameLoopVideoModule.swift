@@ -45,7 +45,13 @@ public class FrameLoopVideoModule: Module {
     Events("onProgress")
 
     AsyncFunction("createTimelapseAsync") { (options: TimelapseOptions) async throws -> [String: Any] in
-      try await self.createTimelapse(options)
+      do {
+        return try await self.createTimelapse(options)
+      } catch {
+        let nativeError = error as NSError
+        NSLog("[FrameLoopVideo] export failed domain=%@ code=%ld description=%@", nativeError.domain, nativeError.code, nativeError.localizedDescription)
+        throw error
+      }
     }
   }
 
@@ -67,6 +73,13 @@ public class FrameLoopVideoModule: Module {
     try? FileManager.default.removeItem(at: outputURL)
 
     let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+    defer {
+      if writer.status != .completed {
+        writer.cancelWriting()
+        try? FileManager.default.removeItem(at: outputURL)
+      }
+    }
+    NSLog("[FrameLoopVideo] start %ldx%ld photos=%ld", width, height, options.photoUris.count)
     let bitRate = width > 1080 || height > 1920 ? 24_000_000 : 8_000_000
     let settings: [String: Any] = [
       AVVideoCodecKey: AVVideoCodecType.h264,
@@ -99,11 +112,15 @@ public class FrameLoopVideoModule: Module {
 
     for frameIndex in 0..<frameCount {
       try Task.checkCancellation()
+      let readinessDeadline = Date().addingTimeInterval(30)
       while !input.isReadyForMoreMediaData {
-        if writer.status == .failed { throw writer.error ?? FrameLoopVideoError.appendFailed }
+        if writer.status != .writing || Date() > readinessDeadline {
+          throw writer.error ?? FrameLoopVideoError.appendFailed
+        }
         try await Task.sleep(nanoseconds: 3_000_000)
       }
 
+      try autoreleasepool {
       let seconds = Double(frameIndex) / Double(fps)
       let position = min(Double(options.photoUris.count) - 0.0001, seconds / frameDuration)
       let currentIndex = min(options.photoUris.count - 1, Int(position))
@@ -139,6 +156,7 @@ public class FrameLoopVideoModule: Module {
       if frameIndex.isMultiple(of: 5) || frameIndex == frameCount - 1 {
         sendEvent("onProgress", ["progress": Double(frameIndex + 1) / Double(frameCount)])
       }
+      }
     }
 
     input.markAsFinished()
@@ -154,7 +172,13 @@ public class FrameLoopVideoModule: Module {
   private func normalizedImage(uri: String, size: CGSize) throws -> CGImage {
     let path = URL(string: uri)?.path ?? uri
     guard let image = UIImage(contentsOfFile: path) else { throw FrameLoopVideoError.imageLoadFailed }
-    let renderer = UIGraphicsImageRenderer(size: size)
+    // `size` is already measured in output pixels, not screen points.
+    // The default Retina scale would allocate a 6480x11520 image for 4K.
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = 1
+    format.opaque = true
+    format.preferredRange = .standard
+    let renderer = UIGraphicsImageRenderer(size: size, format: format)
     let output = renderer.image { context in
       UIColor.black.setFill()
       context.fill(CGRect(origin: .zero, size: size))
