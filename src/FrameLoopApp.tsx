@@ -12,7 +12,6 @@ import { exportBackup, importBackup, loadProjects, persistImage, saveProjects } 
 import { c } from './theme';
 import { Category, ProgressPhoto, Project, Screen } from './types';
 import { createTimelapse, saveVideoToLibrary, shareVideo } from './videoExport';
-import { prepareAdConsent, showAdPrivacyOptions, watchRewardedAdFor4K } from './rewardedAds';
 
 const cats: { key: Category; label: string; icon: string }[] = [
   { key: 'people', label: '사람', icon: '◉' }, { key: 'spaces', label: '공간', icon: '⌂' },
@@ -39,9 +38,14 @@ function EmptyArt() {
   return <View style={s.art}><View style={s.artBack}/><View style={s.artFront}><View style={s.sun}/><View style={s.hill}/></View></View>;
 }
 async function openAdPrivacyOptions() {
-  const result = await showAdPrivacyOptions();
-  if (result === 'not-required') Alert.alert('광고 개인정보 설정', '현재 지역에서는 별도의 광고 개인정보 설정이 필요하지 않아요.');
-  else if (result === 'unavailable') Alert.alert('설정을 열지 못했어요', '인터넷 연결을 확인한 뒤 다시 시도해주세요.');
+  try {
+    const { showAdPrivacyOptions } = await import('./rewardedAds');
+    const result = await showAdPrivacyOptions();
+    if (result === 'not-required') Alert.alert('광고 개인정보 설정', '현재 지역에서는 별도의 광고 개인정보 설정이 필요하지 않아요.');
+    else if (result === 'unavailable') Alert.alert('설정을 열지 못했어요', '인터넷 연결을 확인한 뒤 다시 시도해주세요.');
+  } catch {
+    Alert.alert('설정을 열지 못했어요', '인터넷 연결을 확인한 뒤 다시 시도해주세요.');
+  }
 }
 function openHomeMenu(projects: Project[], onImported: (projects: Project[]) => void) {
   Alert.alert('FrameLoop 안내', '확인할 항목을 선택하세요.', [
@@ -166,7 +170,7 @@ function Playback({project,back}:{project:Project;back:()=>void}) {
   const saveResult=async(uri:string)=>{try{await saveVideoToLibrary(uri);Alert.alert('저장 완료','사진 앱에서 확인할 수 있어요.');}catch(e){Alert.alert('저장하지 못했어요',e instanceof Error?e.message:'다시 시도해주세요.');}};
   const shareResult=async(uri:string)=>{try{await shareVideo(uri);}catch(e){Alert.alert('공유하지 못했어요',e instanceof Error?e.message:'다시 시도해주세요.');}};
   const exportVideo=async(quality:'1080p'|'4k')=>{setPlaying(false);setExportQuality(quality);setExporting(true);setExportProgress(0);try{const uri=await createTimelapse(project,{transition,frameDurationMs:speed,aspectRatio,quality},setExportProgress);Alert.alert('변화 영상이 완성됐어요',`${quality==='4k'?'4K':'1080p'} · ${aspectRatio} 비율로 만들었어요. 사진 앱에 저장하거나 바로 공유할 수 있어요.`,[{text:'닫기',style:'cancel'},{text:'사진 앱에 저장',onPress:()=>saveResult(uri)},{text:'공유',onPress:()=>shareResult(uri)}]);}catch(e){Alert.alert('영상을 만들지 못했어요',e instanceof Error?e.message:'잠시 후 다시 시도해주세요.');}finally{setExporting(false);}};
-  const unlock4K=async()=>{if(exporting||adLoading)return;setPlaying(false);setAdLoading(true);try{const result=await watchRewardedAdFor4K();if(result==='earned')await exportVideo('4k');else if(result==='closed')Alert.alert('4K 저장이 잠겨 있어요','광고를 끝까지 확인하면 4K 영상을 한 번 만들 수 있어요.');else Alert.alert('광고를 준비하지 못했어요','잠시 후 다시 시도하거나 1080p로 저장해주세요.');}finally{setAdLoading(false);}};
+  const unlock4K=async()=>{if(exporting||adLoading)return;setPlaying(false);setAdLoading(true);try{const { watchRewardedAdFor4K }=await import('./rewardedAds');const result=await watchRewardedAdFor4K();if(result==='earned')await exportVideo('4k');else if(result==='closed')Alert.alert('4K 저장이 잠겨 있어요','광고를 끝까지 확인하면 4K 영상을 한 번 만들 수 있어요.');else Alert.alert('광고를 준비하지 못했어요','잠시 후 다시 시도하거나 1080p로 저장해주세요.');}catch{Alert.alert('광고를 준비하지 못했어요','잠시 후 다시 시도하거나 1080p로 저장해주세요.');}finally{setAdLoading(false);}};
   const photo=project.photos[index];
   return <SafeAreaView style={s.playbackPage}><StatusBar style="light"/><View style={s.playbackTop}><Pressable onPress={back} style={s.playbackClose}><Text style={s.playbackCloseText}>×</Text></Pressable><Text style={s.playbackTitle}>{project.title}</Text><View style={{width:42}}/></View>
     <View style={s.playbackCanvas}><Image source={{uri:currentUri}} style={StyleSheet.absoluteFill} resizeMode="cover"/><Animated.Image source={{uri:nextUri}} style={[StyleSheet.absoluteFill,{opacity:fade}]} resizeMode="cover"/><View style={s.playbackShade}/><View style={s.playbackInfo}><Text style={s.playbackCount}>{index+1} / {project.photos.length}</Text><Text style={s.playbackDate}>{fmt(photo.createdAt)}</Text></View></View>
@@ -196,7 +200,6 @@ function Library({projects,go}:{projects:Project[];go:(x:Screen)=>void}) {
 export default function FrameLoopApp() {
   const [projects,setProjects]=useState<Project[]>([]); const [screen,setScreen]=useState<Screen>({name:'home'}); const [loading,setLoading]=useState(true);
   useEffect(()=>{loadProjects().then(setProjects).finally(()=>setLoading(false));},[]);
-  useEffect(()=>{void prepareAdConsent();},[]);
   useEffect(()=>{if(!loading) saveProjects(projects);},[projects,loading]);
   const project=useMemo(()=>'projectId' in screen?projects.find(x=>x.id===screen.projectId):undefined,[projects,screen]);
   const add=(id:string,photo:ProgressPhoto)=>{setProjects(xs=>xs.map(x=>x.id===id?{...x,photos:[...x.photos,photo]}:x));setScreen({name:'project',projectId:id});};
