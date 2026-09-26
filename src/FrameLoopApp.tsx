@@ -8,7 +8,7 @@ import {
   Linking, SafeAreaView, ScrollView, StatusBar as RNStatusBar, StyleSheet, Text,
   TextInput, View,
 } from 'react-native';
-import { exportBackup, importBackup, loadProjects, persistImage, saveProjects } from './storage';
+import { exportBackup, importBackup, loadProjects, persistImage, resolvePhotoUri, saveProjects } from './storage';
 import { c } from './theme';
 import { Category, ProgressPhoto, Project, Screen } from './types';
 import { createTimelapse, saveVideoToLibrary, shareVideo } from './videoExport';
@@ -205,6 +205,12 @@ function Playback({project,back}:{project:Project;back:()=>void}) {
     adBusy.current=true;setPlaying(false);setAdPhase('loading');setAdLoading(true);
     let earned=false;
     try {
+    for (const photo of project.photos) {
+      if (!await resolvePhotoUri(photo.uri)) {
+        Alert.alert('원본 사진을 찾지 못했어요','기록은 그대로 보관돼요. 사진을 다시 추가하거나 백업 파일에서 복원한 뒤 광고를 시청해주세요.');
+        return;
+      }
+    }
       const { watchRewardedAdFor4K }=await import('./rewardedAds');
       const result=await watchRewardedAdFor4K(setAdPhase);
       earned=result==='earned';
@@ -245,11 +251,13 @@ function Library({projects,go}:{projects:Project[];go:(x:Screen)=>void}) {
 
 export default function FrameLoopApp() {
   const [projects,setProjects]=useState<Project[]>([]); const [screen,setScreen]=useState<Screen>({name:'home'}); const [loading,setLoading]=useState(true);
-  useEffect(()=>{loadProjects().then(setProjects).finally(()=>setLoading(false));},[]);
+  const [loadError,setLoadError]=useState(false);
+  const readProjects=()=>{setLoadError(false);loadProjects().then(data=>{setProjects(data);setLoading(false);}).catch(()=>setLoadError(true));};
+  useEffect(()=>{readProjects();},[]);
   useEffect(()=>{if(!loading) saveProjects(projects);},[projects,loading]);
   const project=useMemo(()=>'projectId' in screen?projects.find(x=>x.id===screen.projectId):undefined,[projects,screen]);
   const add=(id:string,photo:ProgressPhoto)=>{setProjects(xs=>xs.map(x=>x.id===id?{...x,photos:[...x.photos,photo]}:x));setScreen({name:'project',projectId:id});};
-  if(loading)return <View style={[s.safe,s.center]}><ActivityIndicator size="large" color={c.blue}/></View>;
+  if(loading)return <View style={[s.safe,s.center]}>{loadError?<><Text style={s.meta}>기록을 불러오지 못했어요. 저장된 기록은 유지돼요.</Text><Button label="다시 불러오기" onPress={readProjects}/></>:<ActivityIndicator size="large" color={c.blue}/>}</View>;
   let body:React.ReactNode;
   if(screen.name==='home')body=<Home projects={projects} go={setScreen} onImported={setProjects}/>;
   else if(screen.name==='create')body=<Create back={()=>setScreen({name:'home'})} create={p=>{setProjects(x=>[p,...x]);setScreen({name:'camera',projectId:p.id});}}/>;
