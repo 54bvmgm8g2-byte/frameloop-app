@@ -1,7 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as DocumentPicker from 'expo-document-picker';
-import JSZip from 'jszip';
 import { Project } from './types';
 
 const KEY = '@frameloop/projects/v1';
@@ -20,6 +18,7 @@ export async function persistImage(source: string) {
 }
 
 export async function exportBackup(projects: Project[]) {
+  const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const manifest = JSON.parse(JSON.stringify(projects)) as Project[];
   for (const project of manifest) for (const photo of project.photos) {
@@ -37,6 +36,10 @@ export async function exportBackup(projects: Project[]) {
 }
 
 export async function importBackup(): Promise<Project[] | null> {
+  const [{ default: JSZip }, DocumentPicker] = await Promise.all([
+    import('jszip'),
+    import('expo-document-picker'),
+  ]);
   const picked = await DocumentPicker.getDocumentAsync({ type: 'application/zip', copyToCacheDirectory: true });
   if (picked.canceled || !picked.assets[0]) return null;
   const encoded = await FileSystem.readAsStringAsync(picked.assets[0].uri, { encoding: FileSystem.EncodingType.Base64 });
