@@ -3,8 +3,22 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Project } from './types';
 
 const KEY = '@frameloop/projects/v1';
+export async function resolvePhotoUri(uri: string): Promise<string | null> {
+  try { if ((await FileSystem.getInfoAsync(uri)).exists) return uri; } catch { /* Try the current container below. */ }
+  // iOS may change the app container UUID after an update. Our photos remain
+  // under Documents/frameloop, but previously saved absolute URLs become stale.
+  const filename = uri.split('/').pop();
+  if (!filename || !uri.includes('/frameloop/')) return null;
+  const relocated = `${FileSystem.documentDirectory}frameloop/${filename}`;
+  try { return (await FileSystem.getInfoAsync(relocated)).exists ? relocated : null; } catch { return null; }
+}
 export async function loadProjects(): Promise<Project[]> {
-  try { return JSON.parse((await AsyncStorage.getItem(KEY)) || '[]'); } catch { return []; }
+  const projects = JSON.parse((await AsyncStorage.getItem(KEY)) || '[]') as Project[];
+  for (const project of projects) for (const photo of project.photos) {
+    const resolved = await resolvePhotoUri(photo.uri);
+    if (resolved) photo.uri = resolved;
+  }
+  return projects;
 }
 export async function saveProjects(projects: Project[]) {
   await AsyncStorage.setItem(KEY, JSON.stringify(projects));
