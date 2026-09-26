@@ -174,6 +174,7 @@ function Playback({project,back}:{project:Project;back:()=>void}) {
   const [aspectRatio,setAspectRatio]=useState<'9:16'|'4:5'|'1:1'>('9:16');
   const [exporting,setExporting]=useState(false); const [exportProgress,setExportProgress]=useState(0); const [adLoading,setAdLoading]=useState(false); const [exportQuality,setExportQuality]=useState<'1080p'|'4k'>('1080p');
   const exportBusy = useRef(false); const adBusy = useRef(false);
+  const [adPhase,setAdPhase]=useState<'loading'|'showing'|'rewarded'|'closed'>('loading');
   const rewardCredit = useRef(false); const [hasRewardCredit,setHasRewardCredit] = useState(false);
   const [currentUri,setCurrentUri]=useState(project.photos[0].uri); const [nextUri,setNextUri]=useState(project.photos[0].uri); const fade=useRef(new Animated.Value(0)).current;
   const show=(next:number,animate=true)=>{const uri=project.photos[next].uri;if(transition==='cut'||!animate){fade.stopAnimation();fade.setValue(0);setCurrentUri(uri);setNextUri(uri);setIndex(next);return;}setNextUri(uri);fade.setValue(0);setIndex(next);Animated.timing(fade,{toValue:1,duration:Math.min(650,speed*.65),useNativeDriver:true}).start(({finished})=>{if(finished){setCurrentUri(uri);fade.setValue(0);}});};
@@ -201,11 +202,11 @@ function Playback({project,back}:{project:Project;back:()=>void}) {
   const unlock4K=async()=>{
     if(exportBusy.current||adBusy.current)return;
     if(rewardCredit.current){await exportVideo('4k');return;}
-    adBusy.current=true;setPlaying(false);setAdLoading(true);
+    adBusy.current=true;setPlaying(false);setAdPhase('loading');setAdLoading(true);
     let earned=false;
     try {
       const { watchRewardedAdFor4K }=await import('./rewardedAds');
-      const result=await watchRewardedAdFor4K();
+      const result=await watchRewardedAdFor4K(setAdPhase);
       earned=result==='earned';
       if(earned){rewardCredit.current=true;setHasRewardCredit(true);}
       else if(result==='closed')Alert.alert('4K 저장이 잠겨 있어요','광고를 끝까지 확인하면 4K 영상을 한 번 만들 수 있어요.');
@@ -225,7 +226,7 @@ function Playback({project,back}:{project:Project;back:()=>void}) {
       <View style={s.speedRow}>{[{v:1400,l:'느리게'},{v:900,l:'보통'},{v:500,l:'빠르게'}].map(x=><Pressable key={x.v} onPress={()=>setSpeed(x.v)} style={[s.speed,x.v===speed&&s.speedOn]}><Text style={[s.speedText,x.v===speed&&{color:'#fff'}]}>{x.l}</Text></Pressable>)}</View>
       <Text style={[s.controlLabel,s.exportRatioLabel]}>저장 비율</Text><View style={s.segmentDark}>{(['9:16','4:5','1:1'] as const).map(x=><Pressable key={x} onPress={()=>setAspectRatio(x)} style={[s.segmentDarkItem,aspectRatio===x&&s.segmentDarkOn]}><Text style={s.segmentDarkText}>{x}</Text></Pressable>)}</View>
       <Pressable disabled={exporting||adLoading} onPress={()=>exportVideo('1080p')} style={({pressed})=>[s.exportButton,(pressed||exporting||adLoading)&&{opacity:.72}]}>{exporting&&exportQuality==='1080p'?<><ActivityIndicator color="#fff"/><Text style={s.exportText}>1080p 만드는 중 · {Math.round(exportProgress*100)}%</Text></>:<Text style={s.exportText}>1080p · {aspectRatio} 무료로 만들기</Text>}</Pressable>
-      <Pressable disabled={exporting||adLoading} onPress={unlock4K} style={({pressed})=>[s.rewardButton,(pressed||exporting||adLoading)&&{opacity:.65}]}>{adLoading?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>광고 준비 중</Text></>:exporting&&exportQuality==='4k'?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>4K 만드는 중 · {Math.round(exportProgress*100)}%</Text></>:<><Text style={s.rewardIcon}>▶</Text><Text style={s.rewardText}>{hasRewardCredit?'광고 없이 4K 다시 만들기':`광고 보고 4K · ${aspectRatio} 만들기`}</Text></>}</Pressable>
+      <Pressable disabled={exporting||adLoading} onPress={unlock4K} style={({pressed})=>[s.rewardButton,(pressed||exporting||adLoading)&&{opacity:.65}]}>{exporting&&exportQuality==='4k'?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>{exportProgress>=1?'4K 영상 마무리 중…':`4K 영상 만드는 중 · ${Math.round(exportProgress*100)}%`}</Text></>:adLoading?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>{adPhase==='loading'?'광고 불러오는 중…':adPhase==='showing'?'광고 시청 완료 확인 중…':'광고 시청 완료 · 영상 생성 준비 중…'}</Text></>:<><Text style={s.rewardIcon}>▶</Text><Text style={s.rewardText}>{hasRewardCredit?'광고 없이 4K 다시 만들기':`광고 보고 4K · ${aspectRatio} 만들기`}</Text></>}</Pressable>
       <Text style={s.localExportHint}>광고는 4K를 선택할 때만 표시돼요. 사진은 서버로 전송되지 않아요.</Text>
     </View>
   </SafeAreaView>;
