@@ -4,7 +4,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Animated, Image, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, Animated, AppState, Image, KeyboardAvoidingView, Platform, Pressable,
   Linking, SafeAreaView, ScrollView, StatusBar as RNStatusBar, StyleSheet, Text,
   TextInput, View,
 } from 'react-native';
@@ -159,20 +159,65 @@ function Compare({ project, back }: { project: Project; back: () => void }) {
 function PickerSlot({label,photo,active,onPress}:{label:string;photo:ProgressPhoto;active:boolean;onPress:()=>void}) { return <Pressable onPress={onPress} style={[s.pickerSlot,active&&s.pickerSlotOn]}><Image source={{uri:photo.uri}} style={s.pickerSlotImage}/><View><Text style={s.pickerSlotLabel}>{label}</Text><Text style={s.pickerSlotDate}>{fmt(photo.createdAt)}</Text></View></Pressable>; }
 function DateBadge({text,left}:{text:string;left?:boolean}) { return <View style={[s.badge,left?{left:10}:{right:10}]}><Text style={s.badgeText}>{text}</Text></View>; }
 
+async function waitForActiveApp() {
+  const deadline = Date.now() + 15000;
+  while (AppState.currentState !== 'active') {
+    if (Date.now() > deadline) throw new Error('앱으로 돌아온 뒤 다시 시도해주세요. 광고 시청 보상은 이 화면에서 유지돼요.');
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  // Let the full-screen ad dismissal finish before starting the encoder.
+  await new Promise(resolve => setTimeout(resolve, 500));
+}
+
 function Playback({project,back}:{project:Project;back:()=>void}) {
   const [index,setIndex]=useState(0); const [playing,setPlaying]=useState(true); const [speed,setSpeed]=useState(900); const [transition,setTransition]=useState<'cut'|'smooth'>('smooth');
   const [aspectRatio,setAspectRatio]=useState<'9:16'|'4:5'|'1:1'>('9:16');
   const [exporting,setExporting]=useState(false); const [exportProgress,setExportProgress]=useState(0); const [adLoading,setAdLoading]=useState(false); const [exportQuality,setExportQuality]=useState<'1080p'|'4k'>('1080p');
+  const exportBusy = useRef(false); const adBusy = useRef(false);
+  const rewardCredit = useRef(false); const [hasRewardCredit,setHasRewardCredit] = useState(false);
   const [currentUri,setCurrentUri]=useState(project.photos[0].uri); const [nextUri,setNextUri]=useState(project.photos[0].uri); const fade=useRef(new Animated.Value(0)).current;
   const show=(next:number,animate=true)=>{const uri=project.photos[next].uri;if(transition==='cut'||!animate){fade.stopAnimation();fade.setValue(0);setCurrentUri(uri);setNextUri(uri);setIndex(next);return;}setNextUri(uri);fade.setValue(0);setIndex(next);Animated.timing(fade,{toValue:1,duration:Math.min(650,speed*.65),useNativeDriver:true}).start(({finished})=>{if(finished){setCurrentUri(uri);fade.setValue(0);}});};
   useEffect(()=>{if(!playing)return;if(index>=project.photos.length-1){setPlaying(false);return;}const timer=setTimeout(()=>{const next=index+1,uri=project.photos[next].uri;if(transition==='cut'){setCurrentUri(uri);setNextUri(uri);}else{setNextUri(uri);fade.setValue(0);Animated.timing(fade,{toValue:1,duration:Math.min(650,speed*.65),useNativeDriver:true}).start(({finished})=>{if(finished){setCurrentUri(uri);fade.setValue(0);}});}setIndex(next);},speed);return()=>clearTimeout(timer);},[playing,index,speed,transition,project.photos,fade]);
   const restart=()=>{if(playing){setPlaying(false);return;}if(index>=project.photos.length-1)show(0,false);setPlaying(true);};
   const saveResult=async(uri:string)=>{try{await saveVideoToLibrary(uri);Alert.alert('저장 완료','사진 앱에서 확인할 수 있어요.');}catch(e){Alert.alert('저장하지 못했어요',e instanceof Error?e.message:'다시 시도해주세요.');}};
   const shareResult=async(uri:string)=>{try{await shareVideo(uri);}catch(e){Alert.alert('공유하지 못했어요',e instanceof Error?e.message:'다시 시도해주세요.');}};
-  const exportVideo=async(quality:'1080p'|'4k')=>{setPlaying(false);setExportQuality(quality);setExporting(true);setExportProgress(0);try{const uri=await createTimelapse(project,{transition,frameDurationMs:speed,aspectRatio,quality},setExportProgress);Alert.alert('변화 영상이 완성됐어요',`${quality==='4k'?'4K':'1080p'} · ${aspectRatio} 비율로 만들었어요. 사진 앱에 저장하거나 바로 공유할 수 있어요.`,[{text:'닫기',style:'cancel'},{text:'사진 앱에 저장',onPress:()=>saveResult(uri)},{text:'공유',onPress:()=>shareResult(uri)}]);}catch(e){Alert.alert('영상을 만들지 못했어요',e instanceof Error?e.message:'잠시 후 다시 시도해주세요.');}finally{setExporting(false);}};
-  const unlock4K=async()=>{if(exporting||adLoading)return;setPlaying(false);setAdLoading(true);try{const { watchRewardedAdFor4K }=await import('./rewardedAds');const result=await watchRewardedAdFor4K();if(result==='earned')await exportVideo('4k');else if(result==='closed')Alert.alert('4K 저장이 잠겨 있어요','광고를 끝까지 확인하면 4K 영상을 한 번 만들 수 있어요.');else Alert.alert('광고를 준비하지 못했어요','잠시 후 다시 시도하거나 1080p로 저장해주세요.');}catch{Alert.alert('광고를 준비하지 못했어요','잠시 후 다시 시도하거나 1080p로 저장해주세요.');}finally{setAdLoading(false);}};
+  const exportVideo=async(quality:'1080p'|'4k')=>{
+    if(exportBusy.current || adBusy.current) return;
+    exportBusy.current=true;
+    setPlaying(false); setAdLoading(false); setExportQuality(quality); setExporting(true); setExportProgress(0);
+    try {
+      await waitForActiveApp();
+      console.info('[FrameLoop/export] start', {quality, aspectRatio, photoCount:project.photos.length});
+      const uri=await createTimelapse(project,{transition,frameDurationMs:speed,aspectRatio,quality},setExportProgress);
+      if(quality==='4k'){rewardCredit.current=false;setHasRewardCredit(false);}
+      console.info('[FrameLoop/export] completed', {quality});
+      Alert.alert('변화 영상이 완성됐어요',`${quality==='4k'?'4K':'1080p'} · ${aspectRatio} 비율로 만들었어요. 사진 앱에 저장하거나 바로 공유할 수 있어요.`,[{text:'닫기',style:'cancel'},{text:'사진 앱에 저장',onPress:()=>saveResult(uri)},{text:'공유',onPress:()=>shareResult(uri)}]);
+    } catch(e) {
+      console.error('[FrameLoop/export] failed', e);
+      const detail=e instanceof Error?e.message:'잠시 후 다시 시도해주세요.';
+      Alert.alert('영상을 만들지 못했어요',detail+(quality==='4k'&&rewardCredit.current?'\n광고 시청 보상은 유지돼요. 이 화면에서 광고 없이 4K 만들기를 다시 시도할 수 있어요.':''));
+    } finally {exportBusy.current=false;setExporting(false);}
+  };
+  const unlock4K=async()=>{
+    if(exportBusy.current||adBusy.current)return;
+    if(rewardCredit.current){await exportVideo('4k');return;}
+    adBusy.current=true;setPlaying(false);setAdLoading(true);
+    let earned=false;
+    try {
+      const { watchRewardedAdFor4K }=await import('./rewardedAds');
+      const result=await watchRewardedAdFor4K();
+      earned=result==='earned';
+      if(earned){rewardCredit.current=true;setHasRewardCredit(true);}
+      else if(result==='closed')Alert.alert('4K 저장이 잠겨 있어요','광고를 끝까지 확인하면 4K 영상을 한 번 만들 수 있어요.');
+      else Alert.alert('광고를 준비하지 못했어요','잠시 후 다시 시도하거나 1080p로 저장해주세요.');
+    } catch(e) {
+      console.error('[FrameLoop/ads] failed', e);
+      Alert.alert('광고를 준비하지 못했어요','잠시 후 다시 시도하거나 1080p로 저장해주세요.');
+    } finally {adBusy.current=false;setAdLoading(false);}
+    if(earned)await exportVideo('4k');
+  };
   const photo=project.photos[index];
-  return <SafeAreaView style={s.playbackPage}><StatusBar style="light"/><View style={s.playbackTop}><Pressable onPress={back} style={s.playbackClose}><Text style={s.playbackCloseText}>×</Text></Pressable><Text style={s.playbackTitle}>{project.title}</Text><View style={{width:42}}/></View>
+  return <SafeAreaView style={s.playbackPage}><StatusBar style="light"/><View style={s.playbackTop}><Pressable disabled={exporting||adLoading} onPress={back} style={s.playbackClose}><Text style={s.playbackCloseText}>×</Text></Pressable><Text style={s.playbackTitle}>{project.title}</Text><View style={{width:42}}/></View>
     <View style={s.playbackCanvas}><Image source={{uri:currentUri}} style={StyleSheet.absoluteFill} resizeMode="cover"/><Animated.Image source={{uri:nextUri}} style={[StyleSheet.absoluteFill,{opacity:fade}]} resizeMode="cover"/><View style={s.playbackShade}/><View style={s.playbackInfo}><Text style={s.playbackCount}>{index+1} / {project.photos.length}</Text><Text style={s.playbackDate}>{fmt(photo.createdAt)}</Text></View></View>
     <View style={s.playbackPanel}><View style={s.progressTrack}><View style={[s.progressFill,{width:`${((index+1)/project.photos.length)*100}%`}]}/></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.playThumbs}>{project.photos.map((p,i)=><Pressable key={p.id} onPress={()=>show(i,false)}><Image source={{uri:p.uri}} style={[s.playThumb,i===index&&s.playThumbOn]}/></Pressable>)}</ScrollView>
       <Text style={s.controlLabel}>전환 방식</Text><View style={s.segmentDark}><Pressable onPress={()=>setTransition('cut')} style={[s.segmentDarkItem,transition==='cut'&&s.segmentDarkOn]}><Text style={s.segmentDarkText}>기본</Text></Pressable><Pressable onPress={()=>setTransition('smooth')} style={[s.segmentDarkItem,transition==='smooth'&&s.segmentDarkOn]}><Text style={s.segmentDarkText}>부드럽게</Text></Pressable></View>
@@ -180,7 +225,7 @@ function Playback({project,back}:{project:Project;back:()=>void}) {
       <View style={s.speedRow}>{[{v:1400,l:'느리게'},{v:900,l:'보통'},{v:500,l:'빠르게'}].map(x=><Pressable key={x.v} onPress={()=>setSpeed(x.v)} style={[s.speed,x.v===speed&&s.speedOn]}><Text style={[s.speedText,x.v===speed&&{color:'#fff'}]}>{x.l}</Text></Pressable>)}</View>
       <Text style={[s.controlLabel,s.exportRatioLabel]}>저장 비율</Text><View style={s.segmentDark}>{(['9:16','4:5','1:1'] as const).map(x=><Pressable key={x} onPress={()=>setAspectRatio(x)} style={[s.segmentDarkItem,aspectRatio===x&&s.segmentDarkOn]}><Text style={s.segmentDarkText}>{x}</Text></Pressable>)}</View>
       <Pressable disabled={exporting||adLoading} onPress={()=>exportVideo('1080p')} style={({pressed})=>[s.exportButton,(pressed||exporting||adLoading)&&{opacity:.72}]}>{exporting&&exportQuality==='1080p'?<><ActivityIndicator color="#fff"/><Text style={s.exportText}>1080p 만드는 중 · {Math.round(exportProgress*100)}%</Text></>:<Text style={s.exportText}>1080p · {aspectRatio} 무료로 만들기</Text>}</Pressable>
-      <Pressable disabled={exporting||adLoading} onPress={unlock4K} style={({pressed})=>[s.rewardButton,(pressed||exporting||adLoading)&&{opacity:.65}]}>{adLoading?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>광고 준비 중</Text></>:exporting&&exportQuality==='4k'?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>4K 만드는 중 · {Math.round(exportProgress*100)}%</Text></>:<><Text style={s.rewardIcon}>▶</Text><Text style={s.rewardText}>광고 보고 4K · {aspectRatio} 만들기</Text></>}</Pressable>
+      <Pressable disabled={exporting||adLoading} onPress={unlock4K} style={({pressed})=>[s.rewardButton,(pressed||exporting||adLoading)&&{opacity:.65}]}>{adLoading?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>광고 준비 중</Text></>:exporting&&exportQuality==='4k'?<><ActivityIndicator color="#fff"/><Text style={s.rewardText}>4K 만드는 중 · {Math.round(exportProgress*100)}%</Text></>:<><Text style={s.rewardIcon}>▶</Text><Text style={s.rewardText}>{hasRewardCredit?'광고 없이 4K 다시 만들기':`광고 보고 4K · ${aspectRatio} 만들기`}</Text></>}</Pressable>
       <Text style={s.localExportHint}>광고는 4K를 선택할 때만 표시돼요. 사진은 서버로 전송되지 않아요.</Text>
     </View>
   </SafeAreaView>;
