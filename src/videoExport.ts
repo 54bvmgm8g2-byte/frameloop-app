@@ -2,6 +2,7 @@ import { Asset, requestPermissionsAsync } from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import FrameLoopVideoModule from '../modules/frameloop-video/src/FrameLoopVideoModule';
 import { Project } from './types';
+import { resolvePhotoUri } from './storage';
 
 export type TimelapseOptions = {
   transition: 'cut' | 'smooth';
@@ -19,6 +20,13 @@ export async function createTimelapse(
   if (project.photos.length < 2) throw new Error('영상은 사진이 2장 이상 필요해요.');
   if (project.photos.length > 60) throw new Error('안정적인 영상 생성을 위해 한 번에 최대 60장까지 지원해요.');
 
+  const photoUris: string[] = [];
+  for (const photo of project.photos) {
+    const uri = await resolvePhotoUri(photo.uri);
+    if (!uri) throw new Error('원본 사진을 찾지 못했어요. 기록은 그대로 보관돼요. 사진을 다시 추가하거나 백업 파일에서 복원해주세요.');
+    photoUris.push(uri);
+  }
+
   const subscription = FrameLoopVideoModule.addListener('onProgress', ({ progress }) => {
     onProgress?.(Math.max(0, Math.min(1, progress)));
   });
@@ -31,7 +39,7 @@ export async function createTimelapse(
         ? { width: shortEdge, height: shortEdge / 4 * 5 }
         : { width: shortEdge, height: shortEdge };
     const result = await FrameLoopVideoModule.createTimelapseAsync({
-      photoUris: project.photos.map(photo => photo.uri),
+      photoUris,
       transition: options.transition,
       frameDurationMs: options.frameDurationMs,
       outputWidth: outputSize.width,
