@@ -42,9 +42,9 @@ async function openAdPrivacyOptions() {
     const { showAdPrivacyOptions } = await import('./rewardedAds');
     const result = await showAdPrivacyOptions();
     if (result === 'not-required') Alert.alert('광고 개인정보 설정', '현재 지역에서는 별도의 광고 개인정보 설정이 필요하지 않아요.');
-    else if (result === 'unavailable') Alert.alert('설정을 열지 못했어요', '인터넷 연결을 확인한 뒤 다시 시도해주세요.');
+    else if (result === 'unavailable') Alert.alert('광고 개인정보 안내', '현재 변경할 광고 개인정보 설정이 없어요. 광고는 개인정보 보호 방식으로 요청됩니다.');
   } catch {
-    Alert.alert('설정을 열지 못했어요', '인터넷 연결을 확인한 뒤 다시 시도해주세요.');
+    Alert.alert('광고 개인정보 안내', '현재 변경할 광고 개인정보 설정이 없어요. 광고는 개인정보 보호 방식으로 요청됩니다.');
   }
 }
 function openHomeMenu(projects: Project[], onImported: (projects: Project[]) => void) {
